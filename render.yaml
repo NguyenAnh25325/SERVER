@@ -1,14 +1,14 @@
 services:
   - type: web
-    name: tomato-disease-api
+    name: ai-server
     runtime: python
-    plan: free          # đổi thành "starter" nếu cần RAM nhiều hơn
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
+    plan: free
+    buildCommand: |
+      python -m pip install --upgrade pip setuptools wheel
+      pip install --no-cache-dir -r requirements.txt
+    startCommand: "gunicorn --bind 0.0.0.0:$PORT app:app --timeout 180 --workers 1"
     envVars:
-      - key: MODEL_PATH
-        value: model/plant_model_final.keras
-      - key: LABELS_PATH
-        value: model/labels.txt
       - key: PYTHON_VERSION
-        value: 3.11.0
+        value: "3.12"
+      - key: PORT
+        value: "10000"

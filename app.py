@@ -1,77 +1,110 @@
-import os
-import io
-import numpy as np
 from flask import Flask, request, jsonify
-from flask_cors import CORS
-from PIL import Image
 import tensorflow as tf
-from tensorflow.keras.applications.efficientnet import preprocess_input
+import numpy as np
+from PIL import Image
+import io
 
+# =========================
+# 🔥 TỐI ƯU RAM TENSORFLOW
+# =========================
+tf.config.threading.set_intra_op_parallelism_threads(1)
+tf.config.threading.set_inter_op_parallelism_threads(1)
+
+# =========================
+# 🚀 INIT APP
+# =========================
 app = Flask(__name__)
-CORS(app)
 
-MODEL_PATH = "model/plant_model_final.keras"
-LABELS_PATH = "model/labels.txt"
-IMG_SIZE = (224, 224)
+# =========================
+# 📦 LOAD MODEL (CHỈ 1 LẦN)
+# =========================
+print("🔄 Loading model...")
 
-model = None
-labels = []
+model = tf.keras.models.load_model(
+    "model/plant_model_final.keras",
+    compile=False
+)
 
-# ===== LOAD MODEL =====
-try:
-    model = tf.keras.models.load_model(MODEL_PATH)
-    print("✅ Model loaded")
-except Exception as e:
-    print("❌ Model error:", e)
-
-try:
-    with open(LABELS_PATH, "r") as f:
-        labels = [x.strip() for x in f]
-except Exception as e:
-    print("❌ Labels error:", e)
+print("✅ Model loaded successfully")
 
 
-def preprocess(img_bytes):
-    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-    img = img.resize(IMG_SIZE)
-    img = np.array(img, dtype=np.float32)
-    img = np.expand_dims(img, axis=0)
-    return preprocess_input(img)
+# =========================
+# 🧠 CLASS LABEL (SỬA THEO MODEL CỦA BẠN)
+# =========================
+CLASS_NAMES = [
+    "Apple___Apple_scab",
+    "Apple___Black_rot",
+    "Apple___Cedar_apple_rust",
+    "Apple___healthy",
+    "Tomato___Late_blight",
+    "Tomato___Early_blight",
+    "Tomato___healthy"
+]
 
 
+# =========================
+# 🔍 PREPROCESS IMAGE
+# =========================
+def preprocess_image(image_bytes):
+    img = Image.open(io.BytesIO(image_bytes))
+    img = img.resize((224, 224))  # chỉnh theo model bạn train
+    img = img.convert("RGB")
+
+    img_array = np.array(img) / 255.0
+    img_array = np.expand_dims(img_array, axis=0)
+
+    return img_array
+
+
+# =========================
+# ❤️ HOME ROUTE
+# =========================
 @app.route("/", methods=["GET"])
 def home():
-    return jsonify({"status": "ok"})
+    return jsonify({
+        "status": "OK",
+        "message": "Plant Disease API is running"
+    })
 
 
+# =========================
+# 🔥 PREDICT ROUTE
+# =========================
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
-        if model is None:
-            return jsonify({"error": "Model not loaded"}), 500
-
         if "file" not in request.files:
-            return jsonify({"error": "No file"}), 400
+            return jsonify({"error": "No file uploaded"}), 400
 
         file = request.files["file"]
-        img = preprocess(file.read())
+        image_bytes = file.read()
 
-        preds = model.predict(img, verbose=0)[0]
+        # preprocess
+        img = preprocess_image(image_bytes)
 
-        idx = int(np.argmax(preds))
-        conf = float(preds[idx])
+        # predict
+        preds = model.predict(img)
+        class_index = int(np.argmax(preds))
+        confidence = float(np.max(preds)) * 100
 
-        label = labels[idx] if idx < len(labels) else str(idx)
+        result = CLASS_NAMES[class_index] if class_index < len(CLASS_NAMES) else "Unknown"
 
         return jsonify({
-            "result": f"{label} ({conf*100:.2f}%)"
+            "class_index": class_index,
+            "confidence": round(confidence, 2),
+            "result": result,
+            "status": "success"
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 
-# ===== IMPORTANT FIX FOR RENDER =====
+# =========================
+# 🚀 RUN (LOCAL ONLY)
+# =========================
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=5000, debug=True)
